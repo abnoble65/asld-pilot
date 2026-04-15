@@ -186,7 +186,10 @@
           resultOffset: offset,
           resultRecordCount: PAGE
         });
-        const resp = await fetch(PROXY + encodeURIComponent(`${BASE_URL}?${params}`));
+        const target = BASE_URL + '?' + params.toString();
+        const proxied = PROXY + encodeURIComponent(target);
+        console.log('Fetching:', proxied);
+        const resp = await fetch(proxied);
         const data = await resp.json();
         if (!data.features || data.features.length === 0) break;
         allFeatures = allFeatures.concat(data.features);
