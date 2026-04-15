@@ -241,6 +241,12 @@
     const TWO_YEARS_MS = 2 * 365.25 * 24 * 60 * 60 * 1000;
     const now = Date.now();
     const twoYearsFromNow = now + TWO_YEARS_MS;
+    // ArcGIS WHERE clause needs DATE 'YYYY-MM-DD' format, not milliseconds
+    const twoYearsDate = new Date(twoYearsFromNow);
+    const twoYearsStr = twoYearsDate.getFullYear() + '-' +
+      String(twoYearsDate.getMonth() + 1).padStart(2, '0') + '-' +
+      String(twoYearsDate.getDate()).padStart(2, '0');
+    console.log('[dates] Two years from now:', twoYearsStr, '(' + twoYearsFromNow + 'ms)');
 
     const parcelStore = {};
     const siteCache = {};
@@ -767,7 +773,7 @@ Keep it under 250 words. Be specific to the data provided.`;
         setProgress(50, 'Loading leased parcels...');
         // Try date-filtered query first, fall back to all leased if <10 results
         let allLeasedFeatures = await fetchAll('expiring-dated', BASE_URL,
-          `ke IS NOT NULL AND county=7 AND expire_date__c IS NOT NULL AND expire_date__c <= ${twoYearsFromNow}`, TRUST_FIELDS);
+          `ke IS NOT NULL AND county=7 AND expire_date__c IS NOT NULL AND expire_date__c <= DATE '${twoYearsStr}'`, TRUST_FIELDS);
         console.log('[load] Date-filtered leased parcels:', allLeasedFeatures.length);
         if (allLeasedFeatures.length > 0) {
           console.log('[load] Sample expire_date__c values:', allLeasedFeatures.slice(0, 5).map(f => f.properties.expire_date__c));
