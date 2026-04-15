@@ -242,6 +242,18 @@
     const now = Date.now();
     const twoYearsFromNow = now + TWO_YEARS_MS;
 
+    const parcelStore = {};
+    let parcelIdCounter = 0;
+
+    function esc(s) {
+      if (s == null) return 'N/A';
+      return String(s)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;');
+    }
+
     function formatDate(epoch) {
       if (!epoch) return 'N/A';
       return new Date(epoch).toLocaleDateString('en-US', {
@@ -264,6 +276,10 @@
       const badgeText = type === 'unleased' ? 'Unleased' : 'Expiring ≤2yr';
       const isUnleased = type === 'unleased';
 
+      // Store parcel data by ID
+      const pid = parcelIdCounter++;
+      parcelStore[pid] = p;
+
       // FYP scoring
       const acres = p.acres || 0;
       const sizePass = acres >= 40;
@@ -283,11 +299,11 @@
           </div>
           <div class="popup-row">
             <span class="popup-label">Beneficiary Fund</span>
-            <span class="popup-value">${fundName(p.fund)}</span>
+            <span class="popup-value">${esc(fundName(p.fund))}</span>
           </div>
           <div class="popup-row">
             <span class="popup-label">Legal Description</span>
-            <span class="popup-value">${p.legaldescription || 'N/A'}</span>
+            <span class="popup-value">${esc(p.legaldescription)}</span>
           </div>
           <div class="popup-row">
             <span class="popup-label">Lease Expiry</span>
@@ -308,15 +324,16 @@
               ${availIcon}
             </div>
           </div>
-          <button class="brief-btn" onclick="generateBrief(this, ${JSON.stringify(JSON.stringify(p))})">Generate Brief</button>
+          <button class="brief-btn" onclick="generateBrief(${pid})">Generate Brief</button>
           <div class="brief-output"></div>
         </div>`;
     }
 
     const BRIEF_URL = 'https://asld-proxy.adam-943.workers.dev/api/brief';
 
-    async function generateBrief(btn, propsJson) {
-      const p = JSON.parse(propsJson);
+    async function generateBrief(pid) {
+      const p = parcelStore[pid];
+      const btn = document.querySelector(`[onclick="generateBrief(${pid})"]`);
       const output = btn.nextElementSibling;
       btn.disabled = true;
       btn.textContent = 'Generating brief...';
@@ -440,7 +457,7 @@ Keep it under 250 words. Be specific to the data provided.`;
           L.geoJSON(f, {
             style: { color: '#9ca3af', weight: 0.5, fillColor: '#d1d5db', fillOpacity: 0.08 }
           })
-            .bindPopup(`<b>${p.ZONE_CLASS || ''}</b><br>${p.ZONE_DESC || ''}`)
+            .bindPopup(`<b>${esc(p.ZONE_CLASS)}</b><br>${esc(p.ZONE_DESC)}`)
             .addTo(zoningLayer);
         });
 
