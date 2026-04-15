@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ASLD Pilot — Arizona State Trust Land Explorer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; }
+
+    #stat-bar {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      padding: 12px 20px;
+      background: #1a1a2e;
+      color: #fff;
+      font-size: 14px;
+      flex-wrap: wrap;
+    }
+    #stat-bar h1 {
+      font-size: 16px;
+      font-weight: 700;
+      margin-right: 8px;
+      white-space: nowrap;
+    }
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .stat .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .dot-blue { background: #3b82f6; }
+    .dot-amber { background: #f59e0b; }
+    .stat-value { font-weight: 700; font-size: 16px; }
+    .stat-label { color: #94a3b8; }
+    #loading {
+      color: #94a3b8;
+      font-style: italic;
+    }
+
+    #map { height: calc(100vh - 48px); width: 100%; }
+
+    .leaflet-popup-content {
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      min-width: 220px;
+    }
+    .popup-title {
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 6px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .popup-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 2px 0;
+    }
+    .popup-label { color: #64748b; }
+    .popup-value { font-weight: 600; text-align: right; max-width: 60%; }
+    .badge {
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .badge-blue { background: #3b82f6; }
+    .badge-amber { background: #f59e0b; }
+  </style>
+</head>
+<body>
+  <div id="stat-bar">
+    <h1>ASLD Pilot</h1>
+    <span id="loading">Loading parcels…</span>
+    <div class="stat" id="stat-unleased" style="display:none">
+      <span class="dot dot-blue"></span>
+      <span class="stat-value" id="unleased-count">—</span>
+      <span class="stat-label">unleased parcels</span>
+      <span class="stat-value" id="unleased-acres">—</span>
+      <span class="stat-label">acres</span>
+    </div>
+    <div class="stat" id="stat-expiring" style="display:none">
+      <span class="dot dot-amber"></span>
+      <span class="stat-value" id="expiring-count">—</span>
+      <span class="stat-label">expiring ≤2 yr</span>
+      <span class="stat-value" id="expiring-acres">—</span>
+      <span class="stat-label">acres</span>
+    </div>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const BASE_URL =
+      'https://server.azgeo.az.gov/arcgis/rest/services/azland/State_Trust_Parcels/FeatureServer/0/query';
+    const BBOX = { xmin: -113.0, ymin: 33.0, xmax: -111.5, ymax: 34.2 };
+
+    const map = L.map('map').setView([33.6, -112.25], 9);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      maxZoom: 19
+    }).addTo(map);
+
+    const unleasedLayer = L.layerGroup().addTo(map);
+    const expiringLayer = L.layerGroup().addTo(map);
+
+    const TWO_YEARS_MS = 2 * 365.25 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const twoYearsFromNow = now + TWO_YEARS_MS;
+
+    function formatDate(epoch) {
+      if (!epoch) return 'N/A';
+      return new Date(epoch).toLocaleDateString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric'
+      });
+    }
+
+    function formatAcres(val) {
+      if (val == null) return 'N/A';
+      return Number(val).toLocaleString('en-US', { maximumFractionDigits: 1 });
+    }
+
+    function makePopup(p, type) {
+      const badgeClass = type === 'unleased' ? 'badge-blue' : 'badge-amber';
+      const badgeText = type === 'unleased' ? 'Unleased' : 'Expiring ≤2yr';
+      return `
+        <div>
+          <div class="popup-title">
+            <span class="badge ${badgeClass}">${badgeText}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">Acres</span>
+            <span class="popup-value">${formatAcres(p.gis_acres || p.acres)}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">Beneficiary Fund</span>
+            <span class="popup-value">${p.bn || 'N/A'}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">Legal Description</span>
+            <span class="popup-value">${p.ld || 'N/A'}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">Lease Expiry</span>
+            <span class="popup-value">${formatDate(p.ke)}</span>
+          </div>
+        </div>`;
+    }
+
+    function polyStyle(color) {
+      return { color, weight: 1.5, fillColor: color, fillOpacity: 0.25 };
+    }
+
+    async function fetchAll(where) {
+      let allFeatures = [];
+      let offset = 0;
+      const PAGE = 1000;
+      while (true) {
+        const params = new URLSearchParams({
+          where,
+          geometry: JSON.stringify({
+            xmin: BBOX.xmin, ymin: BBOX.ymin,
+            xmax: BBOX.xmax, ymax: BBOX.ymax,
+            spatialReference: { wkid: 4326 }
+          }),
+          geometryType: 'esriGeometryEnvelope',
+          spatialRel: 'esriSpatialRelIntersects',
+          inSR: '4326',
+          outSR: '4326',
+          outFields: 'gis_acres,acres,bn,ld,ke',
+          returnGeometry: 'true',
+          f: 'geojson',
+          resultOffset: offset,
+          resultRecordCount: PAGE
+        });
+        const resp = await fetch(`${BASE_URL}?${params}`);
+        const data = await resp.json();
+        if (!data.features || data.features.length === 0) break;
+        allFeatures = allFeatures.concat(data.features);
+        if (data.features.length < PAGE) break;
+        offset += PAGE;
+      }
+      return allFeatures;
+    }
+
+    async function load() {
+      try {
+        const [unleasedFeatures, allLeasedFeatures] = await Promise.all([
+          fetchAll('ke IS NULL'),
+          fetchAll(`ke IS NOT NULL AND ke <= ${twoYearsFromNow} AND ke >= ${now}`)
+        ]);
+
+        let unleasedAcres = 0;
+        unleasedFeatures.forEach(f => {
+          const p = f.properties;
+          unleasedAcres += (p.gis_acres || p.acres || 0);
+          L.geoJSON(f, { style: polyStyle('#3b82f6') })
+            .bindPopup(makePopup(p, 'unleased'))
+            .addTo(unleasedLayer);
+        });
+
+        let expiringAcres = 0;
+        allLeasedFeatures.forEach(f => {
+          const p = f.properties;
+          expiringAcres += (p.gis_acres || p.acres || 0);
+          L.geoJSON(f, { style: polyStyle('#f59e0b') })
+            .bindPopup(makePopup(p, 'expiring'))
+            .addTo(expiringLayer);
+        });
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('stat-unleased').style.display = 'flex';
+        document.getElementById('stat-expiring').style.display = 'flex';
+
+        document.getElementById('unleased-count').textContent =
+          unleasedFeatures.length.toLocaleString();
+        document.getElementById('unleased-acres').textContent =
+          formatAcres(unleasedAcres);
+        document.getElementById('expiring-count').textContent =
+          allLeasedFeatures.length.toLocaleString();
+        document.getElementById('expiring-acres').textContent =
+          formatAcres(expiringAcres);
+
+        L.control.layers(null, {
+          'Unleased (blue)': unleasedLayer,
+          'Expiring ≤2yr (amber)': expiringLayer
+        }).addTo(map);
+
+      } catch (err) {
+        document.getElementById('loading').textContent = 'Error loading data — ' + err.message;
+        console.error(err);
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>
