@@ -143,19 +143,19 @@
           </div>
           <div class="popup-row">
             <span class="popup-label">Acres</span>
-            <span class="popup-value">${formatAcres(p.gis_acres || p.acres)}</span>
+            <span class="popup-value">${formatAcres(p.acres)}</span>
           </div>
           <div class="popup-row">
             <span class="popup-label">Beneficiary Fund</span>
-            <span class="popup-value">${p.bn || 'N/A'}</span>
+            <span class="popup-value">${p.fund || 'N/A'}</span>
           </div>
           <div class="popup-row">
             <span class="popup-label">Legal Description</span>
-            <span class="popup-value">${p.ld || 'N/A'}</span>
+            <span class="popup-value">${p.legaldescription || 'N/A'}</span>
           </div>
           <div class="popup-row">
             <span class="popup-label">Lease Expiry</span>
-            <span class="popup-value">${formatDate(p.ke)}</span>
+            <span class="popup-value">${formatDate(p.expire_date__c)}</span>
           </div>
         </div>`;
     }
@@ -197,7 +197,7 @@
       try {
         const [unleasedFeatures, allLeasedFeatures] = await Promise.all([
           fetchAll('ke IS NULL'),
-          fetchAll(`ke IS NOT NULL AND expire_date__c <= ${twoYearsFromNow} AND expire_date__c >= ${now}`)
+          fetchAll(`ke IS NOT NULL AND expire_date__c <= ${twoYearsFromNow}`)
         ]);
 
         let unleasedAcres = 0;
