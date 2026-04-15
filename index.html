@@ -78,6 +78,44 @@
     }
     .badge-blue { background: #3b82f6; }
     .badge-amber { background: #f59e0b; }
+
+    .legend {
+      background: #fff;
+      border-radius: 8px;
+      padding: 12px 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .legend-title {
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .legend-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .legend-detail {
+      color: #64748b;
+      font-size: 11px;
+      margin-left: 22px;
+    }
+    .legend-credit {
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid #e2e8f0;
+      color: #94a3b8;
+      font-size: 10px;
+    }
   </style>
 </head>
 <body>
@@ -106,16 +144,42 @@
     const PROXY = 'https://asld-proxy.adam-943.workers.dev/?url=';
     const BASE_URL =
       'https://server.azgeo.az.gov/arcgis/rest/services/azland/State_Trust_Parcels/FeatureServer/0/query';
-    const BBOX = { xmin: -113.0, ymin: 33.0, xmax: -111.5, ymax: 34.2 };
 
-    const map = L.map('map').setView([33.6, -112.25], 9);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    const FUND_NAMES = {
+      24: 'University of Arizona',
+      30: 'Common Schools',
+      31: 'K-12 Education',
+      151: 'University (General)',
+      160: 'Normal Schools',
+      181: 'State Institutions'
+    };
+
+    // Basemaps
+    const streets = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; OpenStreetMap &copy; CARTO',
       maxZoom: 19
-    }).addTo(map);
+    });
+    const satellite = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+      subdomains: ['mt0','mt1','mt2','mt3'],
+      attribution: '&copy; Google',
+      maxZoom: 20
+    });
+    const terrain = L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/terrain/{z}/{x}/{y}.png', {
+      subdomains: 'abcd',
+      attribution: '&copy; Stamen Design',
+      maxZoom: 18
+    });
+
+    const map = L.map('map', { layers: [streets] }).setView([33.6, -112.25], 9);
 
     const unleasedLayer = L.layerGroup().addTo(map);
     const expiringLayer = L.layerGroup().addTo(map);
+
+    // Basemap switcher + overlay toggles
+    L.control.layers(
+      { 'Streets': streets, 'Satellite': satellite, 'Terrain': terrain },
+      { 'Unleased (blue)': unleasedLayer, 'Expiring ≤2yr (amber)': expiringLayer }
+    ).addTo(map);
 
     const TWO_YEARS_MS = 2 * 365.25 * 24 * 60 * 60 * 1000;
     const now = Date.now();
@@ -133,6 +197,11 @@
       return Number(val).toLocaleString('en-US', { maximumFractionDigits: 1 });
     }
 
+    function fundName(code) {
+      if (code == null) return 'N/A';
+      return FUND_NAMES[code] || 'Fund ' + code;
+    }
+
     function makePopup(p, type) {
       const badgeClass = type === 'unleased' ? 'badge-blue' : 'badge-amber';
       const badgeText = type === 'unleased' ? 'Unleased' : 'Expiring ≤2yr';
@@ -147,7 +216,7 @@
           </div>
           <div class="popup-row">
             <span class="popup-label">Beneficiary Fund</span>
-            <span class="popup-value">${p.fund || 'N/A'}</span>
+            <span class="popup-value">${fundName(p.fund)}</span>
           </div>
           <div class="popup-row">
             <span class="popup-label">Legal Description</span>
@@ -161,7 +230,7 @@
     }
 
     function polyStyle(color) {
-      return { color, weight: 1.5, fillColor: color, fillOpacity: 0.25 };
+      return { color, weight: 1.5, fillColor: color, fillOpacity: 0.6 };
     }
 
     async function fetchAll(where) {
@@ -193,6 +262,29 @@
       return allFeatures;
     }
 
+    function buildLegend(unleasedCount, unleasedAcres, expiringCount, expiringAcres) {
+      const legend = L.control({ position: 'bottomleft' });
+      legend.onAdd = function () {
+        const div = L.DomUtil.create('div', 'legend');
+        div.innerHTML = `
+          <div class="legend-title">State Trust Parcels</div>
+          <div class="legend-item">
+            <span class="legend-swatch" style="background:#3b82f6;"></span>
+            Unleased Trust Land
+          </div>
+          <div class="legend-detail">${unleasedCount.toLocaleString()} parcels · ${formatAcres(unleasedAcres)} acres</div>
+          <div class="legend-item" style="margin-top:4px;">
+            <span class="legend-swatch" style="background:#f59e0b;"></span>
+            Lease Expiring &lt;2yr
+          </div>
+          <div class="legend-detail">${expiringCount.toLocaleString()} parcels · ${formatAcres(expiringAcres)} acres</div>
+          <div class="legend-credit">CityPulse — Civic Intelligence Platform</div>
+        `;
+        return div;
+      };
+      legend.addTo(map);
+    }
+
     async function load() {
       try {
         const [unleasedFeatures, allLeasedFeatures] = await Promise.all([
@@ -203,7 +295,7 @@
         let unleasedAcres = 0;
         unleasedFeatures.forEach(f => {
           const p = f.properties;
-          unleasedAcres += (p.gis_acres || p.acres || 0);
+          unleasedAcres += (p.acres || 0);
           L.geoJSON(f, { style: polyStyle('#3b82f6') })
             .bindPopup(makePopup(p, 'unleased'))
             .addTo(unleasedLayer);
@@ -212,7 +304,7 @@
         let expiringAcres = 0;
         allLeasedFeatures.forEach(f => {
           const p = f.properties;
-          expiringAcres += (p.gis_acres || p.acres || 0);
+          expiringAcres += (p.acres || 0);
           L.geoJSON(f, { style: polyStyle('#f59e0b') })
             .bindPopup(makePopup(p, 'expiring'))
             .addTo(expiringLayer);
@@ -231,10 +323,7 @@
         document.getElementById('expiring-acres').textContent =
           formatAcres(expiringAcres);
 
-        L.control.layers(null, {
-          'Unleased (blue)': unleasedLayer,
-          'Expiring ≤2yr (amber)': expiringLayer
-        }).addTo(map);
+        buildLegend(unleasedFeatures.length, unleasedAcres, allLeasedFeatures.length, expiringAcres);
 
       } catch (err) {
         document.getElementById('loading').textContent = 'Error loading data — ' + err.message;
