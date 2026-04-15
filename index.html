@@ -534,27 +534,34 @@ Keep it under 250 words. Be specific to the data provided.`;
       console.log(`[progress] ${pct}% — ${detail}`);
     }
 
-    async function fetchAll(label, baseUrl, where, outFields) {
+    async function fetchAll(label, baseUrl, where, outFields, opts) {
+      const useGeom = opts && opts.useGeom;
+      const PAGE = 200;
       let allFeatures = [];
       let offset = 0;
-      console.log(`[fetchAll] START "${label}" where=${where}`);
+      console.log(`[fetchAll] START "${label}" where=${where} useGeom=${!!useGeom}`);
       while (true) {
-        const target = baseUrl +
+        let target = baseUrl +
           '?where=' + encodeURIComponent(where) +
-          '&geometry=-113,33,-111.5,34.2' +
-          '&geometryType=esriGeometryEnvelope' +
-          '&inSR=4326' +
-          '&spatialRel=esriSpatialRelIntersects' +
           '&outSR=4326' +
           '&outFields=' + encodeURIComponent(outFields) +
           '&returnGeometry=true' +
           '&f=geojson' +
           '&resultOffset=' + offset +
-          '&resultRecordCount=1000';
+          '&resultRecordCount=' + PAGE;
+        if (useGeom) {
+          target += '&geometry=-113,33,-111.5,34.2' +
+            '&geometryType=esriGeometryEnvelope' +
+            '&inSR=4326' +
+            '&spatialRel=esriSpatialRelIntersects';
+        }
         const proxied = PROXY + encodeURIComponent(target);
         console.log(`[fetchAll] "${label}" offset=${offset} url=${proxied.substring(0, 120)}...`);
         try {
-          const resp = await fetch(proxied);
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 15000);
+          const resp = await fetch(proxied, { signal: controller.signal });
+          clearTimeout(timeout);
           console.log(`[fetchAll] "${label}" status=${resp.status}`);
           if (!resp.ok) {
             console.error(`[fetchAll] "${label}" HTTP error ${resp.status}`);
@@ -565,10 +572,10 @@ Keep it under 250 words. Be specific to the data provided.`;
           console.log(`[fetchAll] "${label}" got ${count} features`);
           if (!data.features || count === 0) break;
           allFeatures = allFeatures.concat(data.features);
-          if (count < 1000) break;
-          offset += 1000;
+          if (count < PAGE) break;
+          offset += PAGE;
         } catch (err) {
-          console.error(`[fetchAll] "${label}" FAILED:`, err);
+          console.error(`[fetchAll] "${label}" FAILED:`, err.name === 'AbortError' ? 'Request timed out (15s)' : err);
           break;
         }
       }
@@ -611,7 +618,7 @@ Keep it under 250 words. Be specific to the data provided.`;
         setProgress(10, 'Connecting to ASLD...');
 
         setProgress(20, 'Loading unleased parcels...');
-        const unleasedFeatures = await fetchAll('unleased', BASE_URL, 'ke IS NULL', TRUST_FIELDS);
+        const unleasedFeatures = await fetchAll('unleased', BASE_URL, 'ke IS NULL AND county=7', TRUST_FIELDS);
 
         setProgress(40, 'Loading unleased parcels... ' + unleasedFeatures.length + ' found');
         let unleasedAcres = 0;
@@ -625,7 +632,7 @@ Keep it under 250 words. Be specific to the data provided.`;
 
         setProgress(50, 'Loading expiring leases...');
         const allLeasedFeatures = await fetchAll('expiring', BASE_URL,
-          `ke IS NOT NULL AND expire_date__c IS NOT NULL AND expire_date__c <= ${twoYearsFromNow}`, TRUST_FIELDS);
+          `ke IS NOT NULL AND county=7 AND expire_date__c IS NOT NULL AND expire_date__c <= ${twoYearsFromNow}`, TRUST_FIELDS);
 
         setProgress(70, 'Loading expiring leases... ' + allLeasedFeatures.length + ' found');
         let expiringAcres = 0;
@@ -638,7 +645,7 @@ Keep it under 250 words. Be specific to the data provided.`;
         });
 
         setProgress(80, 'Loading zoning layer...');
-        const zoningFeatures = await fetchAll('zoning', ZONING_URL, '1=1', ZONING_FIELDS);
+        const zoningFeatures = await fetchAll('zoning', ZONING_URL, '1=1', ZONING_FIELDS, { useGeom: true });
 
         setProgress(90, 'Rendering zoning... ' + zoningFeatures.length + ' zones');
         zoningFeatures.forEach(f => {
