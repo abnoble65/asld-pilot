@@ -171,21 +171,17 @@
       while (true) {
         const params = new URLSearchParams({
           where,
-          geometry: JSON.stringify({
-            xmin: BBOX.xmin, ymin: BBOX.ymin,
-            xmax: BBOX.xmax, ymax: BBOX.ymax,
-            spatialReference: { wkid: 4326 }
-          }),
-          geometryType: 'esriGeometryEnvelope',
-          spatialRel: 'esriSpatialRelIntersects',
-          inSR: '4326',
           outSR: '4326',
-          outFields: 'gis_acres,acres,bn,ld,ke',
+          outFields: 'gis_acres,acres,bn,ld,ke,expire_date__c',
           returnGeometry: 'true',
           f: 'geojson',
           resultOffset: offset,
           resultRecordCount: PAGE
         });
+        params.set('geometry', '-113,33,-111.5,34.2');
+        params.set('geometryType', 'esriGeometryEnvelope');
+        params.set('inSR', '4326');
+        params.set('spatialRel', 'esriSpatialRelIntersects');
         const target = BASE_URL + '?' + params.toString();
         const proxied = PROXY + encodeURIComponent(target);
         console.log('Fetching:', proxied);
@@ -203,7 +199,7 @@
       try {
         const [unleasedFeatures, allLeasedFeatures] = await Promise.all([
           fetchAll('ke IS NULL'),
-          fetchAll(`ke IS NOT NULL AND ke <= ${twoYearsFromNow} AND ke >= ${now}`)
+          fetchAll(`ke IS NOT NULL AND expire_date__c <= ${twoYearsFromNow} AND expire_date__c >= ${now}`)
         ]);
 
         let unleasedAcres = 0;
