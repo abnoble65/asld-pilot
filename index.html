@@ -169,20 +169,18 @@
       let offset = 0;
       const PAGE = 1000;
       while (true) {
-        const params = new URLSearchParams({
-          where,
-          outSR: '4326',
-          outFields: 'gis_acres,acres,bn,ld,ke,expire_date__c',
-          returnGeometry: 'true',
-          f: 'geojson',
-          resultOffset: offset,
-          resultRecordCount: PAGE
-        });
-        params.set('geometry', '-113,33,-111.5,34.2');
-        params.set('geometryType', 'esriGeometryEnvelope');
-        params.set('inSR', '4326');
-        params.set('spatialRel', 'esriSpatialRelIntersects');
-        const target = BASE_URL + '?' + params.toString();
+        const target = BASE_URL +
+          '?where=' + encodeURIComponent(where) +
+          '&geometry=-113,33,-111.5,34.2' +
+          '&geometryType=esriGeometryEnvelope' +
+          '&inSR=4326' +
+          '&spatialRel=esriSpatialRelIntersects' +
+          '&outSR=4326' +
+          '&outFields=' + encodeURIComponent('objectid,name,acres,gisacres,county,ke,fund,parceltype,legaldescription,openstatus,expire_date__c,effective_date__c') +
+          '&returnGeometry=true' +
+          '&f=geojson' +
+          '&resultOffset=' + offset +
+          '&resultRecordCount=1000';
         const proxied = PROXY + encodeURIComponent(target);
         console.log('Fetching:', proxied);
         const resp = await fetch(proxied);
