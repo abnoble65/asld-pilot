@@ -52,7 +52,7 @@
       font-family: system-ui, -apple-system, sans-serif;
       font-size: 13px;
       line-height: 1.5;
-      min-width: 220px;
+      min-width: 240px;
     }
     .popup-title {
       font-weight: 700;
@@ -78,6 +78,28 @@
     }
     .badge-blue { background: #3b82f6; }
     .badge-amber { background: #f59e0b; }
+
+    .scorecard {
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid #e2e8f0;
+    }
+    .scorecard-title {
+      font-weight: 700;
+      font-size: 12px;
+      color: #334155;
+      margin-bottom: 4px;
+    }
+    .score-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 1px 0;
+      font-size: 12px;
+    }
+    .score-label { color: #64748b; }
+    .score-pass { color: #16a34a; font-weight: 700; }
+    .score-warn { color: #f59e0b; font-weight: 700; }
+    .score-fail { color: #dc2626; font-weight: 700; }
 
     .legend {
       background: #fff;
@@ -144,6 +166,8 @@
     const PROXY = 'https://asld-proxy.adam-943.workers.dev/?url=';
     const BASE_URL =
       'https://server.azgeo.az.gov/arcgis/rest/services/azland/State_Trust_Parcels/FeatureServer/0/query';
+    const ZONING_URL =
+      'https://services.arcgis.com/ltPBnW5Gt8VDqPIU/arcgis/rest/services/Zoning/FeatureServer/0/query';
 
     const FUND_NAMES = {
       24: 'University of Arizona',
@@ -167,13 +191,18 @@
 
     const map = L.map('map', { layers: [streets] }).setView([33.6, -112.25], 9);
 
+    const zoningLayer = L.layerGroup().addTo(map);
     const unleasedLayer = L.layerGroup().addTo(map);
     const expiringLayer = L.layerGroup().addTo(map);
 
     // Basemap switcher + overlay toggles
     L.control.layers(
       { 'Streets': streets, 'Satellite': satellite },
-      { 'Unleased (blue)': unleasedLayer, 'Expiring ≤2yr (amber)': expiringLayer }
+      {
+        'Zoning (gray)': zoningLayer,
+        'Unleased (blue)': unleasedLayer,
+        'Expiring ≤2yr (amber)': expiringLayer
+      }
     ).addTo(map);
 
     const TWO_YEARS_MS = 2 * 365.25 * 24 * 60 * 60 * 1000;
@@ -200,6 +229,16 @@
     function makePopup(p, type) {
       const badgeClass = type === 'unleased' ? 'badge-blue' : 'badge-amber';
       const badgeText = type === 'unleased' ? 'Unleased' : 'Expiring ≤2yr';
+      const isUnleased = type === 'unleased';
+
+      // FYP scoring
+      const acres = p.acres || 0;
+      const sizePass = acres >= 40;
+      const isK12 = p.fund === 31;
+      const sizeIcon = sizePass ? '<span class="score-pass">&#10003;</span>' : '<span class="score-warn">&#10007;</span>';
+      const k12Icon = isK12 ? '<span class="score-pass">&#10003;</span>' : '<span class="score-fail">&#10007;</span>';
+      const availIcon = isUnleased ? '<span class="score-pass">&#10003;</span>' : '<span class="score-warn">&#10007;</span>';
+
       return `
         <div>
           <div class="popup-title">
@@ -221,6 +260,21 @@
             <span class="popup-label">Lease Expiry</span>
             <span class="popup-value">${formatDate(p.expire_date__c)}</span>
           </div>
+          <div class="scorecard">
+            <div class="scorecard-title">Readiness Score</div>
+            <div class="score-row">
+              <span class="score-label">Size threshold (40ac+)</span>
+              ${sizeIcon}
+            </div>
+            <div class="score-row">
+              <span class="score-label">K-12 Priority fund</span>
+              ${k12Icon}
+            </div>
+            <div class="score-row">
+              <span class="score-label">Available now</span>
+              ${availIcon}
+            </div>
+          </div>
         </div>`;
     }
 
@@ -228,19 +282,18 @@
       return { color, weight: 2.5, fillColor: color, fillOpacity: 0.2 };
     }
 
-    async function fetchAll(where) {
+    async function fetchAll(baseUrl, where, outFields) {
       let allFeatures = [];
       let offset = 0;
-      const PAGE = 1000;
       while (true) {
-        const target = BASE_URL +
+        const target = baseUrl +
           '?where=' + encodeURIComponent(where) +
           '&geometry=-113,33,-111.5,34.2' +
           '&geometryType=esriGeometryEnvelope' +
           '&inSR=4326' +
           '&spatialRel=esriSpatialRelIntersects' +
           '&outSR=4326' +
-          '&outFields=' + encodeURIComponent('objectid,name,acres,gisacres,county,ke,fund,parceltype,legaldescription,openstatus,expire_date__c,effective_date__c') +
+          '&outFields=' + encodeURIComponent(outFields) +
           '&returnGeometry=true' +
           '&f=geojson' +
           '&resultOffset=' + offset +
@@ -251,11 +304,14 @@
         const data = await resp.json();
         if (!data.features || data.features.length === 0) break;
         allFeatures = allFeatures.concat(data.features);
-        if (data.features.length < PAGE) break;
-        offset += PAGE;
+        if (data.features.length < 1000) break;
+        offset += 1000;
       }
       return allFeatures;
     }
+
+    const TRUST_FIELDS = 'objectid,name,acres,gisacres,county,ke,fund,parceltype,legaldescription,openstatus,expire_date__c,effective_date__c';
+    const ZONING_FIELDS = 'ZONE_DESC,ZONE_CLASS';
 
     function buildLegend(unleasedCount, unleasedAcres, expiringCount, expiringAcres) {
       const legend = L.control({ position: 'bottomleft' });
@@ -273,6 +329,10 @@
             Lease Expiring &lt;2yr
           </div>
           <div class="legend-detail">${expiringCount.toLocaleString()} parcels · ${formatAcres(expiringAcres)} acres</div>
+          <div class="legend-item" style="margin-top:4px;">
+            <span class="legend-swatch" style="background:#d1d5db; border:1px solid #9ca3af;"></span>
+            County Zoning
+          </div>
           <div class="legend-credit">CityPulse — Civic Intelligence Platform</div>
         `;
         return div;
@@ -282,10 +342,21 @@
 
     async function load() {
       try {
-        const [unleasedFeatures, allLeasedFeatures] = await Promise.all([
-          fetchAll('ke IS NULL'),
-          fetchAll(`ke IS NOT NULL AND expire_date__c <= ${twoYearsFromNow}`)
+        const [unleasedFeatures, allLeasedFeatures, zoningFeatures] = await Promise.all([
+          fetchAll(BASE_URL, 'ke IS NULL', TRUST_FIELDS),
+          fetchAll(BASE_URL, `ke IS NOT NULL AND expire_date__c IS NOT NULL AND expire_date__c <= ${twoYearsFromNow}`, TRUST_FIELDS),
+          fetchAll(ZONING_URL, '1=1', ZONING_FIELDS)
         ]);
+
+        // Zoning layer (rendered first, underneath trust parcels)
+        zoningFeatures.forEach(f => {
+          const p = f.properties;
+          L.geoJSON(f, {
+            style: { color: '#9ca3af', weight: 0.5, fillColor: '#d1d5db', fillOpacity: 0.08 }
+          })
+            .bindPopup(`<b>${p.ZONE_CLASS || ''}</b><br>${p.ZONE_DESC || ''}`)
+            .addTo(zoningLayer);
+        });
 
         let unleasedAcres = 0;
         unleasedFeatures.forEach(f => {
