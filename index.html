@@ -103,6 +103,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
+    const PROXY = 'https://corsproxy.io/?';
     const BASE_URL =
       'https://server.azgeo.az.gov/arcgis/rest/services/azland/State_Trust_Parcels/FeatureServer/0/query';
     const BBOX = { xmin: -113.0, ymin: 33.0, xmax: -111.5, ymax: 34.2 };
@@ -185,7 +186,7 @@
           resultOffset: offset,
           resultRecordCount: PAGE
         });
-        const resp = await fetch(`${BASE_URL}?${params}`);
+        const resp = await fetch(PROXY + encodeURIComponent(`${BASE_URL}?${params}`));
         const data = await resp.json();
         if (!data.features || data.features.length === 0) break;
         allFeatures = allFeatures.concat(data.features);
