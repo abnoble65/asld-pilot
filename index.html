@@ -268,6 +268,32 @@
   </div>
   <div id="map-container">
     <div id="map"></div>
+    <div id="loading-overlay" style="
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 1000;
+      background: white;
+      border-radius: 12px;
+      padding: 24px 32px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      text-align: center;
+      min-width: 240px;
+    ">
+      <div style="font-size:14px;font-weight:500;margin-bottom:8px;">
+        Loading Trust Parcels
+      </div>
+      <div id="loading-detail" style="font-size:12px;color:#888;">
+        Connecting to ASLD...
+      </div>
+      <div style="margin-top:12px;height:3px;background:#eee;
+        border-radius:2px;overflow:hidden;">
+        <div id="loading-bar" style="height:100%;width:0%;
+          background:#185FA5;transition:width 0.5s ease;">
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="drawer">
@@ -502,9 +528,16 @@ Keep it under 250 words. Be specific to the data provided.`;
       return { color, weight: 2.5, fillColor: color, fillOpacity: 0.2 };
     }
 
-    async function fetchAll(baseUrl, where, outFields) {
+    function setProgress(pct, detail) {
+      document.getElementById('loading-bar').style.width = pct + '%';
+      document.getElementById('loading-detail').textContent = detail;
+      console.log(`[progress] ${pct}% — ${detail}`);
+    }
+
+    async function fetchAll(label, baseUrl, where, outFields) {
       let allFeatures = [];
       let offset = 0;
+      console.log(`[fetchAll] START "${label}" where=${where}`);
       while (true) {
         const target = baseUrl +
           '?where=' + encodeURIComponent(where) +
@@ -519,14 +552,27 @@ Keep it under 250 words. Be specific to the data provided.`;
           '&resultOffset=' + offset +
           '&resultRecordCount=1000';
         const proxied = PROXY + encodeURIComponent(target);
-        console.log('Fetching:', proxied);
-        const resp = await fetch(proxied);
-        const data = await resp.json();
-        if (!data.features || data.features.length === 0) break;
-        allFeatures = allFeatures.concat(data.features);
-        if (data.features.length < 1000) break;
-        offset += 1000;
+        console.log(`[fetchAll] "${label}" offset=${offset} url=${proxied.substring(0, 120)}...`);
+        try {
+          const resp = await fetch(proxied);
+          console.log(`[fetchAll] "${label}" status=${resp.status}`);
+          if (!resp.ok) {
+            console.error(`[fetchAll] "${label}" HTTP error ${resp.status}`);
+            break;
+          }
+          const data = await resp.json();
+          const count = data.features ? data.features.length : 0;
+          console.log(`[fetchAll] "${label}" got ${count} features`);
+          if (!data.features || count === 0) break;
+          allFeatures = allFeatures.concat(data.features);
+          if (count < 1000) break;
+          offset += 1000;
+        } catch (err) {
+          console.error(`[fetchAll] "${label}" FAILED:`, err);
+          break;
+        }
       }
+      console.log(`[fetchAll] DONE "${label}" total=${allFeatures.length}`);
       return allFeatures;
     }
 
@@ -562,21 +608,12 @@ Keep it under 250 words. Be specific to the data provided.`;
 
     async function load() {
       try {
-        const [unleasedFeatures, allLeasedFeatures, zoningFeatures] = await Promise.all([
-          fetchAll(BASE_URL, 'ke IS NULL', TRUST_FIELDS),
-          fetchAll(BASE_URL, `ke IS NOT NULL AND expire_date__c IS NOT NULL AND expire_date__c <= ${twoYearsFromNow}`, TRUST_FIELDS),
-          fetchAll(ZONING_URL, '1=1', ZONING_FIELDS)
-        ]);
+        setProgress(10, 'Connecting to ASLD...');
 
-        zoningFeatures.forEach(f => {
-          const p = f.properties;
-          L.geoJSON(f, {
-            style: { color: '#9ca3af', weight: 0.5, fillColor: '#d1d5db', fillOpacity: 0.08 }
-          })
-            .bindPopup(`<b>${esc(p.ZONE_CLASS)}</b><br>${esc(p.ZONE_DESC)}`)
-            .addTo(zoningLayer);
-        });
+        setProgress(20, 'Loading unleased parcels...');
+        const unleasedFeatures = await fetchAll('unleased', BASE_URL, 'ke IS NULL', TRUST_FIELDS);
 
+        setProgress(40, 'Loading unleased parcels... ' + unleasedFeatures.length + ' found');
         let unleasedAcres = 0;
         unleasedFeatures.forEach(f => {
           const p = f.properties;
@@ -586,6 +623,11 @@ Keep it under 250 words. Be specific to the data provided.`;
             .addTo(unleasedLayer);
         });
 
+        setProgress(50, 'Loading expiring leases...');
+        const allLeasedFeatures = await fetchAll('expiring', BASE_URL,
+          `ke IS NOT NULL AND expire_date__c IS NOT NULL AND expire_date__c <= ${twoYearsFromNow}`, TRUST_FIELDS);
+
+        setProgress(70, 'Loading expiring leases... ' + allLeasedFeatures.length + ' found');
         let expiringAcres = 0;
         allLeasedFeatures.forEach(f => {
           const p = f.properties;
@@ -594,6 +636,21 @@ Keep it under 250 words. Be specific to the data provided.`;
             .bindPopup(makePopup(p, 'expiring'))
             .addTo(expiringLayer);
         });
+
+        setProgress(80, 'Loading zoning layer...');
+        const zoningFeatures = await fetchAll('zoning', ZONING_URL, '1=1', ZONING_FIELDS);
+
+        setProgress(90, 'Rendering zoning... ' + zoningFeatures.length + ' zones');
+        zoningFeatures.forEach(f => {
+          const p = f.properties;
+          L.geoJSON(f, {
+            style: { color: '#9ca3af', weight: 0.5, fillColor: '#d1d5db', fillOpacity: 0.08 }
+          })
+            .bindPopup(`<b>${esc(p.ZONE_CLASS)}</b><br>${esc(p.ZONE_DESC)}`)
+            .addTo(zoningLayer);
+        });
+
+        setProgress(100, 'Complete');
 
         document.getElementById('loading').style.display = 'none';
         document.getElementById('stat-unleased').style.display = 'flex';
@@ -610,9 +667,15 @@ Keep it under 250 words. Be specific to the data provided.`;
 
         buildLegend(unleasedFeatures.length, unleasedAcres, allLeasedFeatures.length, expiringAcres);
 
+        setTimeout(() => {
+          document.getElementById('loading-overlay').style.display = 'none';
+        }, 600);
+
       } catch (err) {
         document.getElementById('loading').textContent = 'Error loading data — ' + err.message;
-        console.error(err);
+        document.getElementById('loading-detail').textContent = 'Error: ' + err.message;
+        document.getElementById('loading-bar').style.background = '#dc2626';
+        console.error('[load] FAILED:', err);
       }
     }
 
