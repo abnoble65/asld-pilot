@@ -117,6 +117,10 @@
     .sidebar-toggle { position: fixed; left: 0; top: 50%; transform: translateY(-50%); z-index: 1001; background: #1a1a2e; color: #fff; border: none; border-radius: 0 6px 6px 0; padding: 12px 6px; cursor: pointer; font-size: 14px; box-shadow: 2px 0 6px rgba(0,0,0,0.15); transition: left 0.3s ease; }
     .sidebar-toggle.shifted { left: 300px; }
     .sidebar-toggle:hover { background: #2d2d4e; }
+    .sidebar-tabs { display: flex; border-bottom: 1px solid #e2e8f0; }
+    .sidebar-tab { flex: 1; padding: 8px 0; text-align: center; font-size: 12px; font-weight: 600; cursor: pointer; border: none; background: none; color: #64748b; border-bottom: 2px solid transparent; }
+    .sidebar-tab.active { color: #1a1a2e; border-bottom-color: #1a1a2e; }
+    .sidebar-tab:hover { background: #f8fafc; }
 
     /* Legend */
     .legend { background: #fff; border-radius: 8px; padding: 12px 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); font-size: 13px; line-height: 1.6; }
@@ -141,7 +145,7 @@
     <div class="stat" id="stat-expiring" style="display:none">
       <span class="dot dot-amber"></span>
       <span class="stat-value" id="expiring-count">—</span>
-      <span class="stat-label">expiring ≤2 yr</span>
+      <span class="stat-label">leased parcels</span>
       <span class="stat-value" id="expiring-acres">—</span>
       <span class="stat-label">acres</span>
     </div>
@@ -153,6 +157,11 @@
     <div class="sidebar-header">
       <h2>Parcels by Readiness</h2>
       <button class="sidebar-close" onclick="toggleSidebar()">&times;</button>
+    </div>
+    <div class="sidebar-tabs">
+      <button class="sidebar-tab active" onclick="setTypeFilter('unleased',this)">Unleased</button>
+      <button class="sidebar-tab" onclick="setTypeFilter('expiring',this)">Leased</button>
+      <button class="sidebar-tab" onclick="setTypeFilter('all',this)">All</button>
     </div>
     <div class="sidebar-controls">
       <input type="text" class="sidebar-search" id="sidebar-search" placeholder="Search legal desc, acres, fund..." oninput="filterSidebar()">
@@ -458,7 +467,7 @@
 
     function makePopup(p, type, feature) {
       const badgeClass = type === 'unleased' ? 'badge-blue' : 'badge-amber';
-      const badgeText = type === 'unleased' ? 'Unleased' : 'Expiring ≤2yr';
+      const badgeText = type === 'unleased' ? 'Unleased' : 'Leased';
       const isUnleased = type === 'unleased';
       const pid = parcelIdCounter++;
       parcelStore[pid] = { props: p, type, geometry: feature.geometry };
@@ -488,6 +497,7 @@
     // ── Sidebar ──
     let allSidebarEntries = [];
     let scoreFilter = -1;
+    let typeFilter = 'unleased';
 
     function toggleSidebar() {
       const sb = document.getElementById('sidebar');
@@ -502,6 +512,13 @@
     function setScoreFilter(val, btn) {
       scoreFilter = val;
       document.querySelectorAll('.sidebar-score-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filterSidebar();
+    }
+
+    function setTypeFilter(val, btn) {
+      typeFilter = val;
+      document.querySelectorAll('.sidebar-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       filterSidebar();
     }
@@ -521,6 +538,7 @@
 
       const filtered = allSidebarEntries.filter(e => {
         const p = e.props;
+        if (typeFilter !== 'all' && e.type !== typeFilter) return false;
         if (scoreFilter >= 0 && e.score !== scoreFilter) return false;
         if ((p.acres || 0) < minAcres) return false;
         if (fundFilter && String(p.fund) !== fundFilter) return false;
@@ -718,7 +736,7 @@ Keep it under 250 words. Be specific to the data provided.`;
           <div class="legend-title">State Trust Parcels</div>
           <div class="legend-item"><span class="legend-swatch" style="background:#3b82f6;"></span> Unleased Trust Land</div>
           <div class="legend-detail">${unleasedCount.toLocaleString()} parcels · ${formatAcres(unleasedAcres)} acres</div>
-          <div class="legend-item" style="margin-top:4px;"><span class="legend-swatch" style="background:#f59e0b;"></span> Lease Expiring &lt;2yr</div>
+          <div class="legend-item" style="margin-top:4px;"><span class="legend-swatch" style="background:#f59e0b;"></span> Leased Parcels</div>
           <div class="legend-detail">${expiringCount.toLocaleString()} parcels · ${formatAcres(expiringAcres)} acres</div>
           <div class="legend-item" style="margin-top:4px;"><span class="legend-swatch" style="background:#d1d5db; border:1px solid #9ca3af;"></span> County Zoning</div>
           <div class="legend-credit">CityPulse — Civic Intelligence Platform</div>`;
@@ -746,11 +764,30 @@ Keep it under 250 words. Be specific to the data provided.`;
           parcelLayers[pid] = layer;
         });
 
-        setProgress(50, 'Loading expiring leases...');
-        const allLeasedFeatures = await fetchAll('expiring', BASE_URL,
-          'ke IS NOT NULL AND county=7', TRUST_FIELDS);
+        setProgress(50, 'Loading leased parcels...');
+        // Try date-filtered query first, fall back to all leased if <10 results
+        let allLeasedFeatures = await fetchAll('expiring-dated', BASE_URL,
+          `ke IS NOT NULL AND county=7 AND expire_date__c IS NOT NULL AND expire_date__c <= ${twoYearsFromNow}`, TRUST_FIELDS);
+        console.log('[load] Date-filtered leased parcels:', allLeasedFeatures.length);
+        if (allLeasedFeatures.length > 0) {
+          console.log('[load] Sample expire_date__c values:', allLeasedFeatures.slice(0, 5).map(f => f.properties.expire_date__c));
+        }
+        if (allLeasedFeatures.length < 10) {
+          console.log('[load] <10 results with date filter, falling back to all leased parcels');
+          allLeasedFeatures = await fetchAll('expiring-all', BASE_URL,
+            'ke IS NOT NULL AND county=7', TRUST_FIELDS);
+          console.log('[load] All leased parcels:', allLeasedFeatures.length);
+          if (allLeasedFeatures.length > 0) {
+            const samples = allLeasedFeatures.slice(0, 10).map(f => ({
+              ke: f.properties.ke,
+              expire: f.properties.expire_date__c,
+              effective: f.properties.effective_date__c
+            }));
+            console.log('[load] Sample date fields:', JSON.stringify(samples, null, 2));
+          }
+        }
 
-        setProgress(70, allLeasedFeatures.length + ' expiring leases loaded');
+        setProgress(70, allLeasedFeatures.length + ' leased parcels loaded');
         let expiringAcres = 0;
         allLeasedFeatures.forEach(f => {
           const p = f.properties;
