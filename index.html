@@ -84,16 +84,36 @@
     /* Sidebar */
     #sidebar { position: fixed; left: -300px; top: 48px; bottom: 0; width: 300px; background: #fff; box-shadow: 2px 0 8px rgba(0,0,0,0.1); transition: left 0.3s ease; z-index: 1000; display: flex; flex-direction: column; }
     #sidebar.open { left: 0; }
-    .sidebar-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px 10px; border-bottom: 1px solid #e2e8f0; }
+    .sidebar-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px 8px; border-bottom: 1px solid #e2e8f0; }
     .sidebar-header h2 { font-size: 14px; font-weight: 700; color: #1a1a2e; }
     .sidebar-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #64748b; padding: 2px 6px; border-radius: 4px; }
     .sidebar-close:hover { background: #f1f5f9; }
+    .sidebar-controls { padding: 10px 14px; border-bottom: 1px solid #e2e8f0; }
+    .sidebar-search { width: 100%; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; outline: none; }
+    .sidebar-search:focus { border-color: #3b82f6; }
+    .sidebar-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .sidebar-filters label { font-size: 11px; color: #64748b; display: flex; flex-direction: column; gap: 2px; }
+    .sidebar-filters select, .sidebar-filters input[type=range] { font-size: 11px; padding: 2px 4px; border: 1px solid #d1d5db; border-radius: 4px; }
+    .sidebar-score-btns { display: flex; gap: 4px; margin-top: 6px; }
+    .sidebar-score-btn { padding: 3px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 11px; cursor: pointer; background: #fff; color: #334155; }
+    .sidebar-score-btn.active { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
+    .sidebar-count { padding: 6px 14px; font-size: 11px; color: #64748b; border-bottom: 1px solid #f1f5f9; }
     .sidebar-list { flex: 1; overflow-y: auto; }
-    .sidebar-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-size: 12px; }
-    .sidebar-item:hover { background: #f8fafc; }
+    .sidebar-item { display: flex; align-items: stretch; gap: 0; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-size: 12px; }
+    .sidebar-item:nth-child(even) { background: #f8fafc; }
+    .sidebar-item:hover { background: #eef2ff; }
+    .sidebar-item-bar { width: 4px; flex-shrink: 0; border-radius: 2px 0 0 2px; }
+    .sidebar-item-bar-green { background: #16a34a; }
+    .sidebar-item-bar-amber { background: #f59e0b; }
+    .sidebar-item-bar-red { background: #dc2626; }
+    .sidebar-item-body { display: flex; align-items: center; gap: 10px; padding: 8px 10px; flex: 1; min-width: 0; }
+    .sidebar-item-score { flex-shrink: 0; }
     .sidebar-item-info { flex: 1; min-width: 0; }
-    .sidebar-item-name { font-weight: 600; color: #1a1a2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .sidebar-item-meta { color: #64748b; font-size: 11px; }
+    .sidebar-item-acres { font-weight: 700; font-size: 14px; color: #1a1a2e; }
+    .sidebar-item-fund { color: #64748b; font-size: 11px; }
+    .sidebar-item-legal { color: #94a3b8; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sidebar-item-fly { flex-shrink: 0; background: none; border: none; cursor: pointer; font-size: 14px; padding: 4px; color: #64748b; }
+    .sidebar-item-fly:hover { color: #3b82f6; }
     .sidebar-toggle { position: fixed; left: 0; top: 50%; transform: translateY(-50%); z-index: 1001; background: #1a1a2e; color: #fff; border: none; border-radius: 0 6px 6px 0; padding: 12px 6px; cursor: pointer; font-size: 14px; box-shadow: 2px 0 6px rgba(0,0,0,0.15); transition: left 0.3s ease; }
     .sidebar-toggle.shifted { left: 300px; }
     .sidebar-toggle:hover { background: #2d2d4e; }
@@ -134,6 +154,32 @@
       <h2>Parcels by Readiness</h2>
       <button class="sidebar-close" onclick="toggleSidebar()">&times;</button>
     </div>
+    <div class="sidebar-controls">
+      <input type="text" class="sidebar-search" id="sidebar-search" placeholder="Search legal desc, acres, fund..." oninput="filterSidebar()">
+      <div class="sidebar-filters">
+        <label>Min acres
+          <input type="range" id="filter-acres" min="0" max="1000" value="0" step="10" oninput="this.nextElementSibling.textContent=this.value;filterSidebar()"><span>0</span>
+        </label>
+        <label>Fund
+          <select id="filter-fund" onchange="filterSidebar()">
+            <option value="">All Funds</option>
+            <option value="31">K-12 Education</option>
+            <option value="30">Common Schools</option>
+            <option value="24">University of Arizona</option>
+            <option value="160">Normal Schools</option>
+            <option value="181">State Institutions</option>
+            <option value="151">University (General)</option>
+          </select>
+        </label>
+      </div>
+      <div class="sidebar-score-btns">
+        <button class="sidebar-score-btn active" onclick="setScoreFilter(-1,this)">All</button>
+        <button class="sidebar-score-btn" onclick="setScoreFilter(3,this)">3/3</button>
+        <button class="sidebar-score-btn" onclick="setScoreFilter(2,this)">2/3</button>
+        <button class="sidebar-score-btn" onclick="setScoreFilter(1,this)">1/3</button>
+      </div>
+    </div>
+    <div class="sidebar-count" id="sidebar-count"></div>
     <div class="sidebar-list" id="sidebar-list"></div>
   </div>
 
@@ -440,6 +486,9 @@
     });
 
     // ── Sidebar ──
+    let allSidebarEntries = [];
+    let scoreFilter = -1;
+
     function toggleSidebar() {
       const sb = document.getElementById('sidebar');
       const btn = document.getElementById('sidebar-toggle');
@@ -450,22 +499,59 @@
       setTimeout(() => map.invalidateSize(), 350);
     }
 
+    function setScoreFilter(val, btn) {
+      scoreFilter = val;
+      document.querySelectorAll('.sidebar-score-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filterSidebar();
+    }
+
     function buildSidebar() {
-      const list = document.getElementById('sidebar-list');
-      const entries = Object.entries(parcelStore)
+      allSidebarEntries = Object.entries(parcelStore)
         .map(([pid, entry]) => ({ pid: parseInt(pid), ...entry, score: basicScore(entry.props, entry.type) }))
         .sort((a, b) => b.score - a.score || (b.props.acres || 0) - (a.props.acres || 0));
+      filterSidebar();
+    }
 
-      list.innerHTML = entries.map(e => {
+    function filterSidebar() {
+      const query = (document.getElementById('sidebar-search').value || '').toLowerCase();
+      const minAcres = parseInt(document.getElementById('filter-acres').value) || 0;
+      const fundFilter = document.getElementById('filter-fund').value;
+      const total = allSidebarEntries.length;
+
+      const filtered = allSidebarEntries.filter(e => {
         const p = e.props;
-        const cls = e.score === 3 ? 'score-badge-green' : e.score === 2 ? 'score-badge-amber' : 'score-badge-red';
-        const label = p.legaldescription || p.name || 'Parcel #' + e.pid;
+        if (scoreFilter >= 0 && e.score !== scoreFilter) return false;
+        if ((p.acres || 0) < minAcres) return false;
+        if (fundFilter && String(p.fund) !== fundFilter) return false;
+        if (query) {
+          const haystack = ((p.legaldescription || '') + ' ' + formatAcres(p.acres) + ' ' + fundName(p.fund)).toLowerCase();
+          if (!haystack.includes(query)) return false;
+        }
+        return true;
+      });
+
+      document.getElementById('sidebar-count').textContent =
+        'Showing ' + filtered.length.toLocaleString() + ' of ' + total.toLocaleString() + ' parcels';
+
+      const list = document.getElementById('sidebar-list');
+      list.innerHTML = filtered.map(e => {
+        const p = e.props;
+        const barCls = e.score === 3 ? 'sidebar-item-bar-green' : e.score === 2 ? 'sidebar-item-bar-amber' : 'sidebar-item-bar-red';
+        const badgeCls = e.score === 3 ? 'score-badge-green' : e.score === 2 ? 'score-badge-amber' : 'score-badge-red';
+        const legal = (p.legaldescription || 'Parcel #' + e.pid);
+        const legalShort = legal.length > 30 ? legal.substring(0, 30) + '...' : legal;
         return `<div class="sidebar-item" onclick="flyToParcel(${e.pid})">
-          <div class="sidebar-item-info">
-            <div class="sidebar-item-name">${esc(label)}</div>
-            <div class="sidebar-item-meta">${formatAcres(p.acres)} ac · ${esc(fundName(p.fund))}</div>
+          <div class="sidebar-item-bar ${barCls}"></div>
+          <div class="sidebar-item-body">
+            <div class="sidebar-item-score"><span class="score-badge ${badgeCls}">${e.score}/3</span></div>
+            <div class="sidebar-item-info">
+              <div class="sidebar-item-acres">${formatAcres(p.acres)} ac</div>
+              <div class="sidebar-item-fund">${esc(fundName(p.fund))}</div>
+              <div class="sidebar-item-legal">${esc(legalShort)}</div>
+            </div>
+            <button class="sidebar-item-fly" onclick="event.stopPropagation();flyToParcel(${e.pid})" title="Fly to parcel">&#128205;</button>
           </div>
-          <span class="score-badge ${cls}">${e.score}/3</span>
         </div>`;
       }).join('');
     }
@@ -662,7 +748,7 @@ Keep it under 250 words. Be specific to the data provided.`;
 
         setProgress(50, 'Loading expiring leases...');
         const allLeasedFeatures = await fetchAll('expiring', BASE_URL,
-          `ke IS NOT NULL AND county=7 AND expire_date__c IS NOT NULL AND expire_date__c <= ${twoYearsFromNow}`, TRUST_FIELDS);
+          'ke IS NOT NULL AND county=7', TRUST_FIELDS);
 
         setProgress(70, allLeasedFeatures.length + ' expiring leases loaded');
         let expiringAcres = 0;
