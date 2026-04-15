@@ -47,6 +47,8 @@
     .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; color: #fff; }
     .badge-blue { background: #3b82f6; }
     .badge-amber { background: #f59e0b; }
+    .badge-orange { background: #FF6B35; }
+    .badge-red { background: #dc2626; }
     .scorecard { margin-top: 8px; padding-top: 6px; border-top: 1px solid #e2e8f0; }
     .scorecard-title { font-weight: 700; font-size: 12px; color: #334155; margin-bottom: 4px; }
     .score-row { display: flex; justify-content: space-between; padding: 1px 0; font-size: 12px; }
@@ -117,6 +119,19 @@
     .sidebar-toggle { position: fixed; left: 0; top: 50%; transform: translateY(-50%); z-index: 1001; background: #1a1a2e; color: #fff; border: none; border-radius: 0 6px 6px 0; padding: 12px 6px; cursor: pointer; font-size: 14px; box-shadow: 2px 0 6px rgba(0,0,0,0.15); transition: left 0.3s ease; }
     .sidebar-toggle.shifted { left: 300px; }
     .sidebar-toggle:hover { background: #2d2d4e; }
+    .dot-red { background: #dc2626; }
+    .priority-queue { border-bottom: 1px solid #e2e8f0; }
+    .priority-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px 6px; }
+    .priority-header h3 { font-size: 12px; font-weight: 700; color: #1a1a2e; }
+    .priority-badge { background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 8px; border-radius: 10px; }
+    .priority-item { display: flex; align-items: center; gap: 8px; padding: 6px 14px; font-size: 11px; cursor: pointer; border-bottom: 1px solid #f8fafc; }
+    .priority-item:hover { background: #fff5f5; }
+    .priority-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .priority-info { flex: 1; min-width: 0; }
+    .priority-expiry { font-weight: 700; }
+    .priority-meta { color: #64748b; font-size: 10px; }
+    .priority-fly { background: none; border: none; cursor: pointer; font-size: 12px; color: #64748b; padding: 2px; }
+    .priority-fly:hover { color: #3b82f6; }
     .sidebar-tabs { display: flex; border-bottom: 1px solid #e2e8f0; }
     .sidebar-tab { flex: 1; padding: 8px 0; text-align: center; font-size: 12px; font-weight: 600; cursor: pointer; border: none; background: none; color: #64748b; border-bottom: 2px solid transparent; }
     .sidebar-tab.active { color: #1a1a2e; border-bottom-color: #1a1a2e; }
@@ -146,8 +161,9 @@
       <span class="dot dot-amber"></span>
       <span class="stat-value" id="expiring-count">—</span>
       <span class="stat-label">expiring ≤2 yr</span>
-      <span class="stat-value" id="expiring-acres">—</span>
-      <span class="stat-label">acres</span>
+      <span class="dot dot-red" style="margin-left:12px;"></span>
+      <span class="stat-value" id="critical-count" style="color:#ff4444;">—</span>
+      <span class="stat-label">critical (&lt;6mo)</span>
     </div>
   </div>
 
@@ -188,6 +204,7 @@
         <button class="sidebar-score-btn" onclick="setScoreFilter(1,this)">1/3</button>
       </div>
     </div>
+    <div class="priority-queue" id="priority-queue" style="display:none"></div>
     <div class="sidebar-count" id="sidebar-count"></div>
     <div class="sidebar-list" id="sidebar-list"></div>
   </div>
@@ -255,6 +272,34 @@
     function formatDate(epoch) { if (!epoch) return 'N/A'; return new Date(epoch).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }); }
     function formatAcres(val) { if (val == null) return 'N/A'; return Number(val).toLocaleString('en-US', { maximumFractionDigits: 1 }); }
     function fundName(code) { if (code == null) return 'N/A'; return FUND_NAMES[code] || 'Fund ' + code; }
+
+    const SIX_MONTHS_MS = 6 * 30.44 * 24 * 60 * 60 * 1000;
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    function daysUntilExpiry(expireMs) {
+      if (!expireMs) return null;
+      return Math.round((expireMs - now) / DAY_MS);
+    }
+
+    function expiryLabel(expireMs) {
+      const days = daysUntilExpiry(expireMs);
+      if (days === null) return '';
+      if (days < 0) return 'Expired ' + Math.abs(days) + ' days ago';
+      if (days === 0) return 'Expires today';
+      return 'Expires in ' + days + ' days';
+    }
+
+    function isCritical(expireMs) {
+      if (!expireMs) return false;
+      return (expireMs - now) <= SIX_MONTHS_MS;
+    }
+
+    function expiryPolyStyle(expireMs) {
+      if (isCritical(expireMs)) {
+        return { color: '#CC0000', weight: 3, fillColor: '#FF0000', fillOpacity: 0.6 };
+      }
+      return { color: '#CC4400', weight: 2, fillColor: '#FF6B35', fillOpacity: 0.4 };
+    }
 
     function renderMarkdown(text) {
       return text
@@ -470,8 +515,10 @@
     }
 
     function makePopup(p, type, feature) {
-      const badgeClass = type === 'unleased' ? 'badge-blue' : 'badge-amber';
-      const badgeText = type === 'unleased' ? 'Unleased' : 'Expiring ≤2yr';
+      let badgeClass, badgeText;
+      if (type === 'unleased') { badgeClass = 'badge-blue'; badgeText = 'Unleased'; }
+      else if (isCritical(p.expire_date__c)) { badgeClass = 'badge-red'; badgeText = expiryLabel(p.expire_date__c); }
+      else { badgeClass = 'badge-orange'; badgeText = expiryLabel(p.expire_date__c) || 'Expiring ≤2yr'; }
       const isUnleased = type === 'unleased';
       const pid = parcelIdCounter++;
       parcelStore[pid] = { props: p, type, geometry: feature.geometry };
@@ -531,7 +578,39 @@
       allSidebarEntries = Object.entries(parcelStore)
         .map(([pid, entry]) => ({ pid: parseInt(pid), ...entry, score: basicScore(entry.props, entry.type) }))
         .sort((a, b) => b.score - a.score || (b.props.acres || 0) - (a.props.acres || 0));
+      buildPriorityQueue();
       filterSidebar();
+    }
+
+    function buildPriorityQueue() {
+      const expiring = allSidebarEntries
+        .filter(e => e.type === 'expiring' && e.props.expire_date__c)
+        .sort((a, b) => a.props.expire_date__c - b.props.expire_date__c)
+        .slice(0, 10);
+
+      const pq = document.getElementById('priority-queue');
+      if (expiring.length === 0) { pq.style.display = 'none'; return; }
+
+      pq.innerHTML = `
+        <div class="priority-header">
+          <h3>Expiring Soonest</h3>
+          <span class="priority-badge">${expiring.length}</span>
+        </div>
+        ${expiring.map(e => {
+          const p = e.props;
+          const days = daysUntilExpiry(p.expire_date__c);
+          const critical = isCritical(p.expire_date__c);
+          const dotColor = critical ? '#dc2626' : '#FF6B35';
+          const labelColor = days < 0 ? 'color:#dc2626;' : critical ? 'color:#dc2626;' : 'color:#CC4400;';
+          return `<div class="priority-item" onclick="flyToParcel(${e.pid})">
+            <span class="priority-dot" style="background:${dotColor};"></span>
+            <div class="priority-info">
+              <div class="priority-expiry" style="${labelColor}">${esc(expiryLabel(p.expire_date__c))}</div>
+              <div class="priority-meta">${formatAcres(p.acres)} ac · ${esc(fundName(p.fund))}</div>
+            </div>
+            <button class="priority-fly" onclick="event.stopPropagation();flyToParcel(${e.pid})" title="Fly to parcel">&#128205;</button>
+          </div>`;
+        }).join('')}`;
     }
 
     function filterSidebar() {
@@ -539,6 +618,10 @@
       const minAcres = parseInt(document.getElementById('filter-acres').value) || 0;
       const fundFilter = document.getElementById('filter-fund').value;
       const total = allSidebarEntries.length;
+
+      // Show priority queue only on Expiring tab
+      const pq = document.getElementById('priority-queue');
+      pq.style.display = typeFilter === 'expiring' ? '' : 'none';
 
       const filtered = allSidebarEntries.filter(e => {
         const p = e.props;
@@ -731,7 +814,7 @@ Keep it under 250 words. Be specific to the data provided.`;
 
     const TRUST_FIELDS = 'objectid,name,acres,gisacres,county,ke,fund,parceltype,legaldescription,openstatus,expire_date__c,effective_date__c';
 
-    function buildLegend(unleasedCount, unleasedAcres, expiringCount, expiringAcres) {
+    function buildLegend(unleasedCount, unleasedAcres, expiringCount, expiringAcres, criticalCount) {
       const legend = L.control({ position: 'bottomleft' });
       legend.onAdd = function () {
         const div = L.DomUtil.create('div', 'legend');
@@ -739,8 +822,10 @@ Keep it under 250 words. Be specific to the data provided.`;
           <div class="legend-title">State Trust Parcels</div>
           <div class="legend-item"><span class="legend-swatch" style="background:#3b82f6;"></span> Unleased Trust Land</div>
           <div class="legend-detail">${unleasedCount.toLocaleString()} parcels · ${formatAcres(unleasedAcres)} acres</div>
-          <div class="legend-item" style="margin-top:4px;"><span class="legend-swatch" style="background:#f59e0b;"></span> Expiring ≤2yr</div>
-          <div class="legend-detail">${expiringCount.toLocaleString()} parcels · ${formatAcres(expiringAcres)} acres</div>
+          <div class="legend-item" style="margin-top:4px;"><span class="legend-swatch" style="background:#FF6B35;"></span> Expiring 6-24 months</div>
+          <div class="legend-detail">${(expiringCount - criticalCount).toLocaleString()} parcels</div>
+          <div class="legend-item" style="margin-top:4px;"><span class="legend-swatch" style="background:#FF0000;"></span> Critical (&lt;6 months)</div>
+          <div class="legend-detail">${criticalCount.toLocaleString()} parcels</div>
           <div class="legend-credit">CityPulse — Civic Intelligence Platform</div>`;
         return div;
       };
@@ -789,14 +874,16 @@ Keep it under 250 words. Be specific to the data provided.`;
           }
         }
 
-        setProgress(70, allLeasedFeatures.length + ' leased parcels loaded');
+        setProgress(70, allLeasedFeatures.length + ' expiring parcels loaded');
         let expiringAcres = 0;
+        let criticalCount = 0;
         allLeasedFeatures.forEach(f => {
           const p = f.properties;
           expiringAcres += (p.acres || 0);
+          if (isCritical(p.expire_date__c)) criticalCount++;
           const popupHtml = makePopup(p, 'expiring', f);
           const pid = parcelIdCounter - 1;
-          const layer = L.geoJSON(f, { style: polyStyle('#f59e0b') }).bindPopup(popupHtml);
+          const layer = L.geoJSON(f, { style: expiryPolyStyle(p.expire_date__c) }).bindPopup(popupHtml);
           layer.addTo(expiringLayer);
           parcelLayers[pid] = layer;
         });
@@ -808,9 +895,9 @@ Keep it under 250 words. Be specific to the data provided.`;
         document.getElementById('unleased-count').textContent = unleasedFeatures.length.toLocaleString();
         document.getElementById('unleased-acres').textContent = formatAcres(unleasedAcres);
         document.getElementById('expiring-count').textContent = allLeasedFeatures.length.toLocaleString();
-        document.getElementById('expiring-acres').textContent = formatAcres(expiringAcres);
+        document.getElementById('critical-count').textContent = criticalCount.toLocaleString();
 
-        buildLegend(unleasedFeatures.length, unleasedAcres, allLeasedFeatures.length, expiringAcres);
+        buildLegend(unleasedFeatures.length, unleasedAcres, allLeasedFeatures.length, expiringAcres, criticalCount);
         buildSidebar();
 
         setTimeout(() => { document.getElementById('loading-overlay').style.display = 'none'; }, 600);
