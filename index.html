@@ -155,19 +155,14 @@
     };
 
     // Basemaps
-    const streets = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap &copy; CARTO',
+    const streets = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19
     });
     const satellite = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
       subdomains: ['mt0','mt1','mt2','mt3'],
       attribution: '&copy; Google',
       maxZoom: 20
-    });
-    const terrain = L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/terrain/{z}/{x}/{y}.png', {
-      subdomains: 'abcd',
-      attribution: '&copy; Stamen Design',
-      maxZoom: 18
     });
 
     const map = L.map('map', { layers: [streets] }).setView([33.6, -112.25], 9);
@@ -177,7 +172,7 @@
 
     // Basemap switcher + overlay toggles
     L.control.layers(
-      { 'Streets': streets, 'Satellite': satellite, 'Terrain': terrain },
+      { 'Streets': streets, 'Satellite': satellite },
       { 'Unleased (blue)': unleasedLayer, 'Expiring ≤2yr (amber)': expiringLayer }
     ).addTo(map);
 
@@ -230,7 +225,7 @@
     }
 
     function polyStyle(color) {
-      return { color, weight: 1.5, fillColor: color, fillOpacity: 0.6 };
+      return { color, weight: 2.5, fillColor: color, fillOpacity: 0.2 };
     }
 
     async function fetchAll(where) {
