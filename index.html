@@ -344,7 +344,7 @@
     async function fetchFloodZone(centroid) {
       try {
         const data = await queryPoint('FEMA', FEMA_URL, centroid, '&outFields=FLD_ZONE,ZONE_SUBTY');
-        if (!data.features || data.features.length === 0) return { status: 'unknown', detail: 'No data' };
+        if (!data.features || data.features.length === 0) return { status: 'unknown', detail: 'Outside NFHL coverage area' };
         const zone = data.features[0].attributes.FLD_ZONE || '';
         if (zone.startsWith('X')) return { status: 'pass', detail: zone + ' (minimal flood risk)' };
         if (zone.startsWith('A') || zone.startsWith('V')) return { status: 'fail', detail: zone + ' (flood zone)' };
